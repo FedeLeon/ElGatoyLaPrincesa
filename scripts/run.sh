@@ -42,12 +42,33 @@ for gato_argument in "$@"; do
 done
 gato_platform_args=()
 if [[ -n "${WAYLAND_DISPLAY:-}" && "$gato_window" == true && "$gato_driver" == false ]]; then
-  if [[ -n "${DISPLAY:-}" ]]; then
-    # XWayland delegates title-bar buttons and resizing to the desktop window manager.
-    gato_platform_args+=(--display-driver x11)
-  else
-    gato_platform_args+=(--display-driver wayland)
+  # Native Wayland uses the GPU selected by this desktop; XWayland fell back
+  # to llvmpipe on this machine and made the 3D scene render on the CPU.
+  gato_platform_args+=(--display-driver wayland)
+  # This GNOME install has a libdecor plugin that crashes when its xsettings
+  # schema lacks the antialiasing key. Use Godot's undecorated fallback there.
+  if [[ "${XDG_CURRENT_DESKTOP:-}" == *GNOME* ]] && command -v gsettings >/dev/null 2>&1; then
+    gato_schema_keys="$(gsettings list-keys org.gnome.settings-daemon.plugins.xsettings 2>/dev/null || true)"
+    if [[ "$gato_schema_keys" != *antialiasing* ]]; then
+      gato_decor_dir="${XDG_CACHE_HOME:-$HOME/.cache}/ElGatoyLaPrincesa/no-decor"
+      mkdir -p "$gato_decor_dir"
+      export LIBDECOR_PLUGIN_DIR="$gato_decor_dir"
+    fi
   fi
+fi
+
+# Godot needs its imported texture and font cache before launching the game.
+# Generate it once on a fresh checkout, or after the pixel assets are added.
+if [[ "$gato_window" == true ]] && {
+  ! compgen -G '.godot/imported/PixelifySans.ttf-*.fontdata' >/dev/null ||
+  ! compgen -G '.godot/imported/pixel_forest_floor.png-*.ctex' >/dev/null ||
+  ! compgen -G '.godot/imported/pixel_forest_path.png-*.ctex' >/dev/null ||
+  ! compgen -G '.godot/imported/pixel_princess_walk_sheet.png-*.ctex' >/dev/null ||
+  ! compgen -G '.godot/imported/pixel_stairs.png-*.ctex' >/dev/null ||
+  ! compgen -G '.godot/imported/title_forest_pixel_v2.png-*.ctex' >/dev/null;
+}; then
+  printf '%s\n' 'Preparando los recursos del juego por primera vez…'
+  "$godot_bin" --headless --editor --path . --quit
 fi
 
 exec "$godot_bin" --path . "${gato_platform_args[@]}" "$@"

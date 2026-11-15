@@ -3,6 +3,7 @@ extends RefCounted
 
 const BATCH_SCRIPT := preload("res://scripts/scenery_batch.gd")
 const NATURE := "res://assets/quaternius/nature/"
+const PAINTERLY_TREES := "res://assets/created/forest_models/"
 const DUNGEON := "res://assets/kaykit/dungeon/Assets/gltf/"
 const RESOURCES := "res://assets/kaykit/resources/Assets/gltf/"
 
@@ -12,6 +13,7 @@ var rng := RandomNumberGenerator.new()
 var tree_colliders: StaticBody3D
 var trunk_shape: CylinderShape3D
 var solid_bodies: Dictionary = {}
+var ancient_oak_mesh: QuadMesh
 
 
 func build(parent: Node3D) -> Dictionary:
@@ -27,6 +29,7 @@ func build(parent: Node3D) -> Dictionary:
 	trunk_shape = CylinderShape3D.new()
 	trunk_shape.radius = 0.4
 	trunk_shape.height = 3.0
+	ancient_oak_mesh = QuadMesh.new()
 	_build_ground()
 	_build_path()
 	_build_stream()
@@ -50,12 +53,13 @@ func _build_ground() -> void:
 	var ground := MeshInstance3D.new()
 	var mesh := _build_terrain_mesh()
 	ground.mesh = mesh
-	var ground_material := _material(Color("acb494"), 0.96)
-	ground_material.albedo_texture = load("res://assets/polyhaven/forest_leaves_02/Diffuse.jpg")
-	ground_material.normal_enabled = true
-	ground_material.normal_texture = load("res://assets/polyhaven/forest_leaves_02/nor_gl.jpg")
-	ground_material.normal_scale = 0.45
-	ground_material.uv1_scale = Vector3(55.0, 58.0, 1.0)
+	var ground_material := ShaderMaterial.new()
+	ground_material.shader = load("res://assets/shaders/pixel_ground.gdshader")
+	ground_material.set_shader_parameter("ground_texture", load("res://assets/created/materials/pixel_forest_floor.png"))
+	ground_material.set_shader_parameter("texture_scale", Vector2(38.0, 41.0))
+	ground_material.set_shader_parameter("tint", Color.WHITE)
+	# About five metres per tile keeps the newly painted leaf litter readable at
+	# player scale while hiding the old repetitive photo texture pattern.
 	ground.material_override = ground_material
 	root.add_child(ground)
 	var body := StaticBody3D.new()
@@ -85,7 +89,9 @@ func _build_terrain_mesh() -> ArrayMesh:
 			var p10 := Vector3(x1, _terrain_height(x1, z0), z0)
 			var p01 := Vector3(x0, _terrain_height(x0, z1), z1)
 			var p11 := Vector3(x1, _terrain_height(x1, z1), z1)
-			for vertex in [p00, p01, p10, p10, p01, p11]:
+			# Keep the winding counter-clockwise when viewed from above so both
+			# rendered normals and the trimesh collider face upward.
+			for vertex in [p00, p10, p01, p10, p11, p01]:
 				surface.set_uv(Vector2((vertex.x + width * 0.5) / width, (vertex.z + depth * 0.5 + 10.0) / depth))
 				surface.add_vertex(vertex)
 	surface.index()
@@ -98,6 +104,11 @@ func _terrain_height(x: float, z: float) -> float:
 	var path_distance := _distance_to_path(position)
 	var flatten := _smooth_factor(path_distance, 4.0, 14.0)
 	flatten *= _smooth_factor(absf(z + 12.0), 4.5, 10.0)
+	# The ridge and waterfalls meet at sea level. Flatten a wide perimeter strip
+	# so the sampled terrain triangles, water and mountain feet share that level.
+	flatten *= 1.0 - _smooth_factor(absf(x), 72.0, 80.0)
+	flatten *= 1.0 - _smooth_factor(z, 69.0, 77.0)
+	flatten *= 1.0 - _smooth_factor(-z, 89.0, 97.0)
 	var clearings := [
 		Vector2(-33, 25), Vector2(-31, 24), Vector2(-34, 25), Vector2(33, 6),
 		Vector2(27, -34), Vector2(0, -82), Vector2(0, -86), Vector2(-5.7, -84),
@@ -155,9 +166,9 @@ func _build_path() -> void:
 			next = p + (p - curve.sample_baked(maxf(d - 0.5, 0.0), true))
 		var direction := (next - p).normalized()
 		var side := Vector3(direction.z, 0, -direction.x)
-		var width := 2.7 + sin(d * 0.12) * 0.4 + sin(d * 0.31) * 0.18
-		left.append(p + side * (width + 0.17 * sin(d * 0.57)))
-		right.append(p - side * (width + 0.2 * sin(d * 0.43 + 1.5)))
+		var width := 2.0 + sin(d * 0.12) * 0.28 + sin(d * 0.31) * 0.12
+		left.append(p + side * (width + 0.12 * sin(d * 0.57)))
+		right.append(p - side * (width + 0.14 * sin(d * 0.43 + 1.5)))
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for i in segments:
@@ -170,9 +181,10 @@ func _build_path() -> void:
 	var ribbon := MeshInstance3D.new()
 	ribbon.name = "Sendero"
 	ribbon.mesh = surface.commit()
-	var material := _material(Color("d4c49f"), 1.0)
-	material.albedo_texture = load("res://assets/polyhaven/park_dirt/Diffuse.jpg")
-	material.vertex_color_use_as_albedo = true
+	var material := ShaderMaterial.new()
+	material.shader = load("res://assets/shaders/pixel_ground.gdshader")
+	material.set_shader_parameter("ground_texture", load("res://assets/created/materials/pixel_forest_path.png"))
+	material.set_shader_parameter("tint", Color("b7c5a8"))
 	ribbon.material_override = material
 	root.add_child(ribbon)
 
@@ -246,35 +258,46 @@ func _build_bridge() -> void:
 
 
 func _build_foliage() -> void:
-	var trees := ["CommonTree_1", "CommonTree_2", "CommonTree_3"]
+	var trees := ["CommonTree_1", "CommonTree_2", "CommonTree_3", "CommonTree_3", "CommonTree_3", "CommonTree_3", "CommonTree_2", "TwistedTree_Green"]
 	var rocks := ["Rock_Medium_1", "Rock_Medium_2", "Rock_Medium_3"]
 	# A 190 by 205 m region, with intentional clearings around the route and landmarks.
 	var attempts := 0
 	var placed := 0
-	while placed < 200 and attempts < 3000:
+	while placed < 340 and attempts < 4800:
 		attempts += 1
 		var p := _ground_position(rng.randf_range(-88, 88), rng.randf_range(-106, 88))
 		if _near_path(p, 13.0) or _in_clearings(p):
 			continue
 		var name: String = trees[rng.randi_range(0, trees.size() - 1)]
-		var size := rng.randf_range(1.35, 2.15)
-		batches.add_model(NATURE + name + ".gltf", p, rng.randf_range(-PI, PI), size)
-		var collision := CollisionShape3D.new()
-		collision.shape = trunk_shape
-		collision.position = p + Vector3(0, 1.5, 0)
-		collision.scale = Vector3(size, 1, size)
-		tree_colliders.add_child(collision)
+		var size := rng.randf_range(1.4, 2.25)
+		var yaw := rng.randf_range(-PI, PI)
+		if placed % 8 == 0:
+			_add_ancient_oak(p, yaw, rng.randf_range(0.82, 1.0))
+		else:
+			batches.add_model(_tree_model(name), p, yaw, size)
+			var collision := CollisionShape3D.new()
+			collision.shape = trunk_shape
+			collision.position = p + Vector3(0, 1.5, 0)
+			collision.scale = Vector3(size, 1, size)
+			tree_colliders.add_child(collision)
 		placed += 1
-	for i in 180:
+	for i in 280:
 		var p := _ground_position(rng.randf_range(-87, 87), rng.randf_range(-104, 87))
 		if _near_path(p, 6.0) or _in_clearings(p):
 			continue
 		var name := "Fern_1" if i % 2 == 0 else "Bush_Common"
 		var yaw := rng.randf_range(-PI, PI)
-		var size := rng.randf_range(0.65, 1.25)
-		batches.add_model(NATURE + name + ".gltf", p, yaw, size)
+		var size := rng.randf_range(0.75, 1.4)
+		batches.add_model(_tree_model(name) if name == "Bush_Common" else NATURE + name + ".gltf", p, yaw, size)
 		if name == "Bush_Common":
 			_add_solid_collider(p, yaw, Vector3(1.05, 1.3, 1.05) * size, Vector3(0, 0.55 * size, 0), "Arbusto")
+	# Low, walkable fern undergrowth softens the empty spaces between the large
+	# silhouettes. Instancing keeps the extra foliage cheap to draw.
+	for i in 260:
+		var p := _ground_position(rng.randf_range(-87, 87), rng.randf_range(-104, 87))
+		if _near_path(p, 2.8) or _in_clearings(p):
+			continue
+		batches.add_model(NATURE + "Fern_1.gltf", p, rng.randf_range(-PI, PI), rng.randf_range(0.45, 0.85))
 	for i in 110:
 		var p := _ground_position(rng.randf_range(-87, 87), rng.randf_range(-104, 87))
 		if _near_path(p, 5.0) or _in_clearings(p):
@@ -291,24 +314,28 @@ func _build_entrance_clearing() -> void:
 	# while leaving room to reach Nimbo and follow the path.
 	var local_rng := RandomNumberGenerator.new()
 	local_rng.seed = 95731
-	var tree_names := ["CommonTree_1", "CommonTree_2", "CommonTree_3"]
+	var tree_names := ["CommonTree_1", "CommonTree_2", "CommonTree_3", "TwistedTree_Green"]
 	for i in 55:
 		var side := -1.0 if i % 2 == 0 else 1.0
 		var p := _ground_position(side * local_rng.randf_range(10, 27), local_rng.randf_range(43, 82))
-		if _near_path(p, 8.0) or p.distance_to(Vector3(-2, 0, 59)) < 5.0:
+		if _near_path(p, 8.0) or _in_clearings(p) or p.distance_to(Vector3(-2, 0, 59)) < 5.0:
 			continue
-		var size := local_rng.randf_range(1.6, 2.3)
-		var name: String = tree_names[i % tree_names.size()]
-		batches.add_model(NATURE + name + ".gltf", p, local_rng.randf_range(-PI, PI), size)
-		var collision := CollisionShape3D.new()
-		collision.shape = trunk_shape
-		collision.position = p + Vector3(0, 1.5, 0)
-		collision.scale = Vector3(size, 1, size)
-		tree_colliders.add_child(collision)
+		var size := local_rng.randf_range(1.75, 2.5)
+		var name: String = tree_names[local_rng.randi_range(0, tree_names.size() - 1)]
+		var yaw := local_rng.randf_range(-PI, PI)
+		if name == "TwistedTree_Green":
+			_add_ancient_oak(p, yaw, clampf(size * 0.46, 0.82, 1.15))
+		else:
+			batches.add_model(_tree_model(name), p, yaw, size)
+			var collision := CollisionShape3D.new()
+			collision.shape = trunk_shape
+			collision.position = p + Vector3(0, 1.5, 0)
+			collision.scale = Vector3(size, 1, size)
+			tree_colliders.add_child(collision)
 	for i in 85:
 		var side := -1.0 if i % 2 == 0 else 1.0
 		var p := _ground_position(side * local_rng.randf_range(7.0, 25.0), local_rng.randf_range(42, 84))
-		if _near_path(p, 5.0) or p.distance_to(Vector3(-2, 0, 59)) < 3.0:
+		if _near_path(p, 5.0) or _in_clearings(p) or p.distance_to(Vector3(-2, 0, 59)) < 3.0:
 			continue
 		var name := "Fern_1" if i % 3 else "Rock_Medium_2"
 		var yaw := local_rng.randf_range(-PI, PI)
@@ -323,61 +350,34 @@ func _build_entrance_clearing() -> void:
 		var p := _ground_position(center.x + local_rng.randf_range(-12, 12), center.z + local_rng.randf_range(-9, 9))
 		if _near_path(p, 4.5) or p.distance_to(Vector3(-2, 0, 59)) < 3.0:
 			continue
-		batches.add_model(NATURE + "Grass_Common_Tall.gltf", p, local_rng.randf_range(-PI, PI), local_rng.randf_range(0.55, 1.25))
-	# Giant trees line the path and their overlapping crowns form a canopy.
-	for center in trail_points:
-		for side in [-1.0, 1.0]:
-			var p: Vector3 = center + Vector3(side * local_rng.randf_range(7.0, 9.0), 0, local_rng.randf_range(-1.5, 1.5))
-			if _near_path(p, 5.8) or p.distance_to(Vector3(-2, 0, 59)) < 4.0:
-				continue
-			var size := local_rng.randf_range(2.1, 2.6)
-			batches.add_model(NATURE + "CommonTree_3.gltf", p, local_rng.randf_range(-PI, PI), size)
-			var collision := CollisionShape3D.new()
-			collision.shape = trunk_shape
-			collision.position = p + Vector3(0, 1.5, 0)
-			collision.scale = Vector3(size, 1, size)
-			tree_colliders.add_child(collision)
+		batches.add_model(_tree_model("Grass_Common_Tall"), p, local_rng.randf_range(-PI, PI), local_rng.randf_range(0.55, 1.25))
 
 
 func _build_giant_canopy() -> void:
-	# Wider crowns lean toward the trail, making the canopy feel continuous.
-	var giants := [
-		[Vector3(13, 0, 68), PI, 1.4],
-		[Vector3(-9, 0, 53), 0.0, 1.5],
-		[Vector3(-8, 0, 14), 0.0, 1.45],
-		[Vector3(-23, 0, -13), 0.0, 1.4],
-		[Vector3(17, 0, -42), PI, 1.4],
-		[Vector3(-9, 0, -62), 0.0, 1.35],
-	]
-	for giant in giants:
-		var p: Vector3 = giant[0]
-		p.y = _terrain_height(p.x, p.z)
-		var size: float = giant[2]
-		batches.add_model(NATURE + "TwistedTree_Green.gltf", p, giant[1], size)
-		var collision := CollisionShape3D.new()
-		collision.shape = trunk_shape
-		collision.position = p + Vector3(0, 1.5, 0)
-		collision.scale = Vector3(size * 1.4, 1, size * 1.4)
-		tree_colliders.add_child(collision)
+	# Original elder oaks form an irregular roof over the trail. They share one
+	# detailed mesh and stay inside spatial MultiMesh batches to keep draw calls low.
+	var local_rng := RandomNumberGenerator.new()
+	local_rng.seed = 170284
+	var trail := [Vector3(0, 0, 72), Vector3(3, 0, 60), Vector3(9, 0, 45), Vector3(13, 0, 30), Vector3(6, 0, 15), Vector3(-8, 0, 2), Vector3(-14, 0, -12), Vector3(-7, 0, -28), Vector3(7, 0, -43), Vector3(6, 0, -57), Vector3(0, 0, -75)]
+	for point_index in trail.size():
+		var center: Vector3 = trail[point_index]
+		for side in [-1.0, 1.0]:
+			var side_offset := local_rng.randf_range(8.8, 10.8)
+			var p := _ground_position(center.x + side * side_offset + local_rng.randf_range(-1.7, 1.7), center.z + local_rng.randf_range(-3.0, 3.0))
+			if _near_path(p, 5.7) or _in_clearings(p):
+				p = _ground_position(center.x + side * 12.0, center.z + local_rng.randf_range(-2.0, 2.0))
+			_add_ancient_oak(p, local_rng.randf_range(-PI, PI), local_rng.randf_range(0.92, 1.16))
 
 
-func _build_background_hills() -> void:
-	var hill_mesh := SphereMesh.new()
-	hill_mesh.radius = 1.0
-	hill_mesh.height = 2.0
-	hill_mesh.radial_segments = 20
-	hill_mesh.rings = 10
-	var hill_mat := _material(Color("526447"), 1.0)
-	for side in [-1.0, 1.0]:
-		for z in [-70.0, -22.0, 28.0, 78.0]:
-			var hill := MeshInstance3D.new()
-			hill.name = "ColinaDeFondo"
-			hill.mesh = hill_mesh
-			hill.material_override = hill_mat
-			hill.position = Vector3(side * 105.0, -4.0, z)
-			hill.scale = Vector3(18.0, 7.0, 29.0)
-			hill.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			root.add_child(hill)
+func _add_ancient_oak(position: Vector3, yaw: float, size: float) -> void:
+	batches.add_mesh("ElderOak_Ancient", ancient_oak_mesh, position, yaw, size)
+	var trunk := CollisionShape3D.new()
+	var trunk_cylinder := CylinderShape3D.new()
+	trunk_cylinder.radius = 0.88 * size
+	trunk_cylinder.height = 8.0 * size
+	trunk.shape = trunk_cylinder
+	trunk.position = position + Vector3(0, 4.0 * size, 0)
+	tree_colliders.add_child(trunk)
 
 
 func _build_landmarks() -> void:
@@ -394,9 +394,11 @@ func _build_landmarks() -> void:
 		_add_prop("res://assets/kaykit/dungeon/Assets/gltf/wall_broken.gltf", p, rng.randf_range(-PI, PI), 1.2)
 	var stairs := _add_prop("res://assets/kaykit/dungeon/Assets/gltf/stairs_wide.gltf", Vector3(0, 0, -82), 0, 2.0)
 	if stairs:
-		# The original kit piece is five metres tall before scaling. Flatten it
-		# into shallow steps and use a gentle solid ramp for character movement.
-		stairs.scale.y = 0.12
+		# Keep the source collision-free silhouette out of view: its imported
+		# material rendered as an opaque white slab. A pixel stair illustration
+		# sits over the same walkable ramp while preserving the shrine approach.
+		_hide_meshes(stairs)
+		_add_pixel_ground_landmark("res://assets/created/isometric/pixel_stairs.png", Vector3(0, 0.34, -77.5), Vector2(12.8, 9.3))
 		var stair_body := StaticBody3D.new()
 		stair_body.name = "RampaDelSantuario"
 		stair_body.position = Vector3(0, 0.20, -77.5)
@@ -412,6 +414,8 @@ func _build_landmarks() -> void:
 	entrance.position = Vector3(0, 0, -86)
 	entrance.scale = Vector3(2.2, 2.2, 1.6)
 	root.add_child(entrance)
+	_hide_meshes(entrance)
+	_add_pixel_landmark(entrance, "res://assets/created/isometric/pixel_sanctuary.png", 2.4)
 	var decorative_door := entrance.find_child("wall_doorway_door", true, false) as Node3D
 	if decorative_door:
 		decorative_door.visible = false
@@ -423,9 +427,22 @@ func _build_landmarks() -> void:
 	gate.scale = Vector3(2.1, 2.1, 1.6)
 	gate.set_meta("gate", true)
 	root.add_child(gate)
+	_hide_meshes(gate)
+	_add_pixel_landmark(gate, "res://assets/created/isometric/pixel_gate.png", 1.8)
 	_add_box_collision(gate, Vector3(0, 1.0, 0), Vector3(2.0, 2.0, 0.35))
-	_add_prop("res://assets/kaykit/dungeon/Assets/gltf/torch_lit.gltf", Vector3(-5.7, 0.0, -84), 0, 1.2)
-	_add_prop("res://assets/kaykit/dungeon/Assets/gltf/torch_lit.gltf", Vector3(5.7, 0.0, -84), 0, 1.2)
+	for torch_x in [-5.7, 5.7]:
+		var torch := _add_prop("res://assets/kaykit/dungeon/Assets/gltf/torch_lit.gltf", Vector3(torch_x, 0.0, -84), 0, 1.2)
+		if torch:
+			_hide_meshes(torch)
+			_add_pixel_landmark(torch, "res://assets/created/isometric/pixel_torch.png", 2.3)
+			var firelight := OmniLight3D.new()
+			firelight.name = "LuzTibia"
+			firelight.position = Vector3(0, 1.35, 0)
+			firelight.light_color = Color("ffd18a")
+			firelight.light_energy = 0.8
+			firelight.omni_range = 5.0
+			firelight.shadow_enabled = false
+			torch.add_child(firelight)
 	var sigil_positions := [Vector3(0, 0, -60), Vector3(19, 0, -20), Vector3(-18, 0, 13)]
 	for i in sigil_positions.size():
 		var sigil := Node3D.new()
@@ -435,6 +452,8 @@ func _build_landmarks() -> void:
 		var model := load(model_path).instantiate() as Node3D
 		model.scale = Vector3(0.38, 0.5, 0.38)
 		sigil.add_child(model)
+		_hide_meshes(model)
+		_add_pixel_landmark(sigil, "res://assets/created/isometric/pixel_waystone.png", 2.4)
 		var glow := MeshInstance3D.new()
 		glow.name = "RunicGlow"
 		var orb := SphereMesh.new()
@@ -443,7 +462,17 @@ func _build_landmarks() -> void:
 		glow.mesh = orb
 		glow.position = Vector3(0, 2.0, -0.48)
 		glow.material_override = _material(Color("66c4a1"), 0.3, true)
+		glow.visible = false
 		sigil.add_child(glow)
+		var rune_light := OmniLight3D.new()
+		rune_light.name = "RunicLight"
+		rune_light.position = Vector3(0, 1.3, 0)
+		rune_light.light_color = Color("84e3bd")
+		rune_light.light_energy = 1.15
+		rune_light.omni_range = 3.8
+		rune_light.shadow_enabled = false
+		rune_light.visible = false
+		sigil.add_child(rune_light)
 		var label := Label3D.new()
 		label.name = "Symbol"
 		label.text = ["SEMILLA  ◆", "LUNA  ☾", "AGUA  ≋"][i]
@@ -459,6 +488,51 @@ func _build_landmarks() -> void:
 		root.add_child(sigil)
 		_add_box_collision(sigil, Vector3(0, 0.85, 0), Vector3(0.9, 1.7, 0.7))
 		_sigils.append(sigil)
+
+
+func _hide_meshes(node: Node) -> void:
+	for item in node.find_children("*", "MeshInstance3D", true, false):
+		(item as MeshInstance3D).visible = false
+
+
+func _add_pixel_landmark(parent: Node3D, path: String, height: float) -> void:
+	var texture := load(path) as Texture2D
+	if not texture:
+		return
+	var sprite := Sprite3D.new()
+	sprite.name = "IlustracionPixel"
+	sprite.texture = texture
+	sprite.pixel_size = height / float(texture.get_height())
+	sprite.position.y = height * 0.5
+	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+	sprite.alpha_scissor_threshold = 0.2
+	sprite.shaded = false
+	sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(sprite)
+
+
+func _add_pixel_ground_landmark(path: String, at: Vector3, size: Vector2) -> void:
+	var texture := load(path) as Texture2D
+	if not texture:
+		return
+	var illustration := MeshInstance3D.new()
+	illustration.name = "EscalonesIlustrados"
+	var plane := PlaneMesh.new()
+	plane.size = size
+	illustration.mesh = plane
+	var material := StandardMaterial3D.new()
+	material.albedo_texture = texture
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	material.alpha_scissor_threshold = 0.18
+	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	illustration.material_override = material
+	illustration.position = at
+	illustration.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(illustration)
 
 
 func _add_box_collision(parent: Node3D, at: Vector3, size: Vector3) -> void:
@@ -518,8 +592,13 @@ func _add_prop(path: String, at: Vector3, yaw: float, scale: float) -> Node3D:
 	model.scale = Vector3.ONE * scale
 	root.add_child(model)
 	if path.contains("pillar_decorated"):
+		if at.distance_to(Vector3(0, 0, -85)) > 15.0:
+			_hide_meshes(model)
+			_add_pixel_landmark(model, "res://assets/created/isometric/pixel_waystone.png", 3.2 * scale)
 		_add_box_collision(model, Vector3(0, 1.6, 0), Vector3(1.4, 3.2, 1.0))
 	elif path.contains("wall_broken"):
+		_hide_meshes(model)
+		_add_pixel_landmark(model, "res://assets/created/isometric/pixel_wall.png", 1.9 * scale)
 		_add_box_collision(model, Vector3(0, 0.65, 0), Vector3(3.2, 1.3, 0.75))
 	elif path.contains("Wood_Log_Stack"):
 		_add_box_collision(model, Vector3(0, 0.70, 0), Vector3(1.5, 1.4, 1.3))
@@ -553,6 +632,9 @@ func _distance_to_segment(p: Vector3, a: Vector3, b: Vector3) -> float:
 
 
 func _in_clearings(p: Vector3) -> bool:
+	for waterfall in [Vector2(-89.3, 30), Vector2(-89.3, -43), Vector2(89.3, 18), Vector2(89.3, -61), Vector2(-42, -106.3), Vector2(45, -106.3), Vector2(-48, 86.3), Vector2(48, 86.3)]:
+		if Vector2(p.x, p.z).distance_to(waterfall) < 8.0:
+			return true
 	return p.distance_to(Vector3(-33, 0, 25)) < 9 or p.distance_to(Vector3(33, 0, 6)) < 7 or p.distance_to(Vector3(27, 0, -34)) < 7 or p.distance_to(Vector3(0, 0, -85)) < 13 or p.distance_to(Vector3(-18, 0, 13)) < 5 or p.distance_to(Vector3(19, 0, -20)) < 5 or p.distance_to(Vector3(0, 0, -60)) < 5
 
 
@@ -565,3 +647,7 @@ func _material(color: Color, roughness: float, glow: bool = false) -> StandardMa
 		mat.emission = color
 		mat.emission_energy_multiplier = 0.45
 	return mat
+
+
+func _tree_model(model_name: String) -> String:
+	return PAINTERLY_TREES + model_name + ".gltf"

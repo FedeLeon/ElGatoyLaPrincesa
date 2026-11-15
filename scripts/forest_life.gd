@@ -12,6 +12,7 @@ var elapsed := 0.0
 
 func _ready() -> void:
 	_build_mushrooms()
+	_build_wildflowers()
 	_build_butterflies()
 
 
@@ -58,17 +59,17 @@ func _build_mushrooms() -> void:
 	stem_mesh.top_radius = 0.065
 	stem_mesh.bottom_radius = 0.09
 	stem_mesh.height = 0.32
-	stem_mesh.radial_segments = 8
+	stem_mesh.radial_segments = 12
 	var cap_mesh := SphereMesh.new()
 	cap_mesh.radius = 0.24
 	cap_mesh.height = 0.48
-	cap_mesh.radial_segments = 12
-	cap_mesh.rings = 6
+	cap_mesh.radial_segments = 18
+	cap_mesh.rings = 9
 	var spot_mesh := SphereMesh.new()
 	spot_mesh.radius = 0.035
 	spot_mesh.height = 0.07
-	spot_mesh.radial_segments = 6
-	spot_mesh.rings = 4
+	spot_mesh.radial_segments = 8
+	spot_mesh.rings = 5
 	var stems := _batch(stem_mesh, _material(Color("ded5ae")), positions.size(), "TallosDeHongos")
 	var caps := _batch(cap_mesh, _material(Color.WHITE), positions.size(), "SombrerosDeHongos")
 	var spots := _batch(spot_mesh, _material(Color("f2e5c5")), positions.size() * 3, "PuntosDeHongos")
@@ -85,6 +86,58 @@ func _build_mushrooms() -> void:
 			spots.set_instance_color(i * 3 + j, Color.WHITE)
 
 
+func _build_wildflowers() -> void:
+	# Small flower clusters add scale and color at the camera's near field. Three
+	# shared MultiMeshes keep the patch count low even with hundreds of blooms.
+	var random := RandomNumberGenerator.new()
+	random.seed = 817223
+	var positions: Array[Vector3] = []
+	var colors: Array[Color] = []
+	var terrain = get_parent().get("terrain_builder")
+	for anchor in ANCHORS:
+		for cluster in 7:
+			var center: Vector3 = anchor + Vector3(random.randf_range(-8.5, 8.5), 0, random.randf_range(-7.0, 7.0))
+			if center.distance_to(anchor) < 4.2:
+				continue
+			for flower in random.randi_range(5, 9):
+				var x := center.x + random.randf_range(-1.7, 1.7)
+				var z := center.z + random.randf_range(-1.7, 1.7)
+				var y: float = terrain.terrain_height_at(x, z) if terrain else 0.0
+				positions.append(Vector3(x, y, z))
+				colors.append([Color("f5deb0"), Color("f3c6ad"), Color("d9dfaa"), Color("e5d9e9")][random.randi_range(0, 3)])
+	var stems_mesh := CylinderMesh.new()
+	stems_mesh.top_radius = 0.018
+	stems_mesh.bottom_radius = 0.032
+	stems_mesh.height = 0.32
+	stems_mesh.radial_segments = 7
+	var bloom_mesh := SphereMesh.new()
+	bloom_mesh.radius = 0.085
+	bloom_mesh.height = 0.075
+	bloom_mesh.radial_segments = 12
+	bloom_mesh.rings = 6
+	var center_mesh := SphereMesh.new()
+	center_mesh.radius = 0.038
+	center_mesh.height = 0.06
+	center_mesh.radial_segments = 8
+	center_mesh.rings = 4
+	var stems := _batch(stems_mesh, _material(Color("789254")), positions.size(), "TallitosDeFlores")
+	var petals := _batch(bloom_mesh, _material(Color.WHITE), positions.size() * 5, "PetalosSilvestres")
+	var centers := _batch(center_mesh, _material(Color("e8bd68")), positions.size(), "CentrosDeFlores")
+	for i in positions.size():
+		var p := positions[i]
+		var flower_scale := random.randf_range(0.72, 1.28)
+		stems.set_instance_transform(i, Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * flower_scale), p + Vector3(0, 0.16 * flower_scale, 0)))
+		stems.set_instance_color(i, Color.WHITE)
+		for petal in 5:
+			var angle := TAU * float(petal) / 5.0
+			var offset := Vector3(cos(angle) * 0.075, 0.34, sin(angle) * 0.075) * flower_scale
+			var basis := Basis(Vector3.UP, -angle).scaled(Vector3(0.82, 0.42, 1.18) * flower_scale)
+			petals.set_instance_transform(i * 5 + petal, Transform3D(basis, p + offset))
+			petals.set_instance_color(i * 5 + petal, colors[i])
+		centers.set_instance_transform(i, Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * flower_scale), p + Vector3(0, 0.37 * flower_scale, 0)))
+		centers.set_instance_color(i, Color("e8bd68"))
+
+
 func _build_butterflies() -> void:
 	var random := RandomNumberGenerator.new()
 	random.seed = 12871
@@ -99,7 +152,11 @@ func _build_butterflies() -> void:
 		for vertex in [Vector3.ZERO, edge[i], edge[(i + 1) % edge.size()]]:
 			surface.set_normal(Vector3.FORWARD)
 			surface.add_vertex(vertex)
-	wings = _batch(surface.commit(), _material(Color.WHITE, true), origins.size() * 2, "AlasDeMariposas")
+	var wing_glow := _material(Color.WHITE, true)
+	wing_glow.emission_enabled = true
+	wing_glow.emission = Color("d6db91")
+	wing_glow.emission_energy_multiplier = 0.3
+	wings = _batch(surface.commit(), wing_glow, origins.size() * 2, "AlasDeMariposas")
 	var body_mesh := SphereMesh.new()
 	body_mesh.radius = 0.025
 	body_mesh.height = 0.12
@@ -114,7 +171,7 @@ func _build_butterflies() -> void:
 	_update_wings()
 
 
-func _process(delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	elapsed += delta
 	_update_wings()
 

@@ -8,6 +8,7 @@ var options_panel: Control
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	GameAudio.play_menu_music()
 	_build_background()
 	_build_menu()
 	_build_options()
@@ -16,7 +17,8 @@ func _ready() -> void:
 func _build_background() -> void:
 	var backdrop := TextureRect.new()
 	backdrop.name = "IlustracionDelBosque"
-	backdrop.texture = load("res://assets/ui/title_forest.png")
+	backdrop.texture = load("res://assets/ui/title_forest_pixel_v2.png")
+	backdrop.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	backdrop.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	backdrop.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -133,6 +135,8 @@ func _make_button(text_value: String, primary: bool) -> Button:
 	button.add_theme_stylebox_override("hover", _button_style(Color("7a7048")))
 	button.add_theme_stylebox_override("pressed", _button_style(Color("394a3c")))
 	button.add_theme_stylebox_override("focus", _button_style(Color("665b3d")))
+	button.pressed.connect(func() -> void: GameAudio.play_ui("ui_confirm"))
+	button.mouse_entered.connect(func() -> void: GameAudio.play_ui("ui_hover"))
 	return button
 
 
@@ -140,8 +144,8 @@ func _button_style(color: Color) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = color
 	style.border_color = Color("c4aa72")
-	style.set_border_width_all(1)
-	style.set_corner_radius_all(6)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(0)
 	style.content_margin_left = 18
 	style.content_margin_right = 18
 	style.content_margin_top = 9

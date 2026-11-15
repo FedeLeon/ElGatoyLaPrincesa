@@ -14,19 +14,19 @@ func _ready() -> void:
 	var panel := PanelContainer.new()
 	panel.set_anchors_preset(Control.PRESET_CENTER)
 	panel.offset_left = -245
-	panel.offset_top = -245
+	panel.offset_top = -305
 	panel.offset_right = 245
-	panel.offset_bottom = 245
+	panel.offset_bottom = 305
 	panel.add_theme_stylebox_override("panel", _panel_style())
 	add_child(panel)
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 28)
-	margin.add_theme_constant_override("margin_top", 28)
-	margin.add_theme_constant_override("margin_right", 28)
-	margin.add_theme_constant_override("margin_bottom", 28)
+	margin.add_theme_constant_override("margin_left", 24)
+	margin.add_theme_constant_override("margin_top", 24)
+	margin.add_theme_constant_override("margin_right", 24)
+	margin.add_theme_constant_override("margin_bottom", 24)
 	panel.add_child(margin)
 	var layout := VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 15)
+	layout.add_theme_constant_override("separation", 9)
 	margin.add_child(layout)
 	var title := Label.new()
 	title.text = "Ajustes"
@@ -34,20 +34,9 @@ func _ready() -> void:
 	title.add_theme_color_override("font_color", Color("f1dba5"))
 	layout.add_child(title)
 	_add_spacer(layout, 5)
-	var volume_row := _make_row(layout, "Volumen general")
-	var volume_value := _make_value_label(volume_row)
-	volume_value.text = "%d%%" % roundi(GameSettings.master_volume * 100.0)
-	var volume := HSlider.new()
-	volume.min_value = 0.0
-	volume.max_value = 1.0
-	volume.step = 0.05
-	volume.value = GameSettings.master_volume
-	volume.custom_minimum_size = Vector2(0, 28)
-	layout.add_child(volume)
-	volume.value_changed.connect(func(value: float) -> void:
-		GameSettings.set_master_volume(value)
-		volume_value.text = "%d%%" % roundi(value * 100.0)
-	)
+	_add_audio_slider(layout, "Volumen general", GameSettings.master_volume, GameSettings.set_master_volume)
+	_add_audio_slider(layout, "Música", GameSettings.music_volume, GameSettings.set_music_volume)
+	_add_audio_slider(layout, "Efectos", GameSettings.effects_volume, GameSettings.set_effects_volume)
 	var sensitivity_row := _make_row(layout, "Sensibilidad del ratón")
 	var sensitivity_value := _make_value_label(sensitivity_row)
 	sensitivity_value.text = "%d%%" % roundi(GameSettings.mouse_sensitivity / DEFAULT_SENSITIVITY * 100.0)
@@ -83,12 +72,29 @@ func _ready() -> void:
 const DEFAULT_SENSITIVITY := 0.0025
 
 
+func _add_audio_slider(parent: VBoxContainer, label_text: String, initial_value: float, setter: Callable) -> void:
+	var row := _make_row(parent, label_text)
+	var value_label := _make_value_label(row)
+	value_label.text = "%d%%" % roundi(initial_value * 100.0)
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 1.0
+	slider.step = 0.05
+	slider.value = initial_value
+	slider.custom_minimum_size = Vector2(0, 24)
+	parent.add_child(slider)
+	slider.value_changed.connect(func(value: float) -> void:
+		setter.call(value)
+		value_label.text = "%d%%" % roundi(value * 100.0)
+	)
+
+
 func _panel_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.055, 0.075, 0.06, 0.97)
 	style.border_color = Color("a78e5e")
 	style.set_border_width_all(2)
-	style.set_corner_radius_all(8)
+	style.set_corner_radius_all(0)
 	style.content_margin_left = 4
 	style.content_margin_right = 4
 	style.content_margin_top = 4
@@ -136,6 +142,8 @@ func _make_button(text_value: String, primary: bool) -> Button:
 	button.add_theme_stylebox_override("hover", _button_style(Color("7d7046")))
 	button.add_theme_stylebox_override("pressed", _button_style(Color("394a3c")))
 	button.add_theme_stylebox_override("focus", _button_style(Color("665b3d")))
+	button.pressed.connect(func() -> void: GameAudio.play_ui("ui_confirm"))
+	button.mouse_entered.connect(func() -> void: GameAudio.play_ui("ui_hover"))
 	return button
 
 

@@ -16,11 +16,10 @@ var pools: Array[Vector3] = []
 func build(parent: Node3D) -> Array[Vector3]:
 	root = parent
 	mountain_material = StandardMaterial3D.new()
-	mountain_material.albedo_color = Color("88937c")
-	mountain_material.albedo_texture = load("res://assets/polyhaven/rocky_terrain_02/Diffuse.jpg")
-	mountain_material.normal_enabled = true
-	mountain_material.normal_texture = load("res://assets/polyhaven/rocky_terrain_02/nor_gl.jpg")
-	mountain_material.normal_scale = 0.6
+	mountain_material.albedo_color = Color.WHITE
+	mountain_material.albedo_texture = load("res://assets/created/materials/ridge_stone_painterly.png")
+	mountain_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	mountain_material.normal_enabled = false
 	mountain_material.roughness = 0.95
 	mountain_material.vertex_color_use_as_albedo = true
 	mountain_material.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -56,7 +55,7 @@ func _build_ridge(start: Vector3, along: Vector3, outward: Vector3, length: floa
 		var peak := 24.0 + sin(t * 16.0 + phase) * 5.0 + sin(t * 39.0 + phase * 2.0) * 2.8
 		var shoulder := peak * (0.64 + 0.08 * sin(t * 22.0 + phase))
 		rows.append([
-			base + Vector3(0, -0.08, 0),
+			base + Vector3(0, -3.0, 0),
 			base + outward * 7.0 + Vector3(0, peak, 0),
 			base + outward * 18.0 + Vector3(0, shoulder, 0),
 			base + outward * 35.0 + Vector3(0, -0.2, 0),
@@ -120,7 +119,9 @@ func _add_falls(base: Vector3, outward: Vector3, width: float) -> void:
 	pool_mesh.size = Vector2.ONE * width * 1.16
 	pool.mesh = pool_mesh
 	pool.material_override = pool_material
-	pool.position = base + Vector3(0, 0.075, 0) - outward * 1.6
+	# Keep most of the pool on the playable side of the ridge while its edge
+	# still meets the falling water at the mountain foot.
+	pool.position = base + Vector3(0, 0.075, 0) - outward * (width * 0.38)
 	pool.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(pool, true)
 	pools.append(pool.position)

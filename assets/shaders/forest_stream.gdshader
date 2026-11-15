@@ -8,8 +8,11 @@ void vertex() {
 void fragment() {
 	float wave = sin(world_pos.x * 1.9 - TIME * 1.7 + sin(world_pos.z * 2.2)) * 0.5 + 0.5;
 	float current = sin(world_pos.x * 4.0 - TIME * 2.2 + world_pos.z * 3.3) * 0.5 + 0.5;
-	ALBEDO = mix(vec3(0.17, 0.37, 0.34), vec3(0.40, 0.68, 0.60), wave * 0.35 + current * 0.12);
+	float glint_wave = sin(world_pos.x * 7.5 + TIME * 1.1) * sin(world_pos.z * 8.0 - TIME * 1.7);
+	float glint = smoothstep(0.78, 0.99, glint_wave) * (0.45 + wave * 0.55);
+	ALBEDO = mix(vec3(0.17, 0.37, 0.34), vec3(0.40, 0.68, 0.60), wave * 0.35 + current * 0.12) + vec3(0.17, 0.23, 0.13) * glint;
 	ROUGHNESS = 0.24;
 	SPECULAR = 0.45;
+	EMISSION = vec3(0.025, 0.045, 0.026) + vec3(0.20, 0.30, 0.16) * glint;
 	ALPHA = 0.82;
 }
